@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOW PLAYING</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #111;
+    --border: #222;
+    --accent: #1DB954;
+    --text: #e8e8e8;
+    --muted: #555;
+    --danger: #ff3b3b;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  .app { width: 100%; max-width: 460px; }
+
+  /* ── CONNECT SCREEN ── */
+  #connectScreen {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 52px 32px;
+    gap: 28px;
+    text-align: center;
+  }
+
+  .logo-wrap { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+  .sp-icon {
+    width: 60px; height: 60px;
+    background: var(--accent);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sp-icon svg { width: 34px; height: 34px; }
+
+  .connect-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 52px;
+    letter-spacing: 4px;
+    line-height: 1;
+  }
+  .connect-title span { color: var(--accent); }
+
+  .connect-desc { font-size: 11px; color: var(--muted); line-height: 1.9; letter-spacing: .5px; }
+
+  .btn-connect {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 16px 32px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 20px;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: background .15s, transform .1s;
+    width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .btn-connect:hover { background: #23e865; }
+  .btn-connect:active { transform: scale(.98); }
+  .btn-connect svg { width: 20px; height: 20px; }
+
+  .error-msg {
+    background: #1a0505;
+    border: 1px solid #3a0a0a;
+    color: var(--danger);
+    font-size: 11px;
+    padding: 10px 14px;
+    display: none;
+    width: 100%;
+    text-align: left;
+    line-height: 1.6;
+  }
+
+  /* ── PLAYER ── */
+  #player {
+    display: none;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+  }
+
+  .player-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .player-label {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 12px; letter-spacing: 3px; color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+  }
+
+  .live-dot {
+    width: 6px; height: 6px;
+    background: var(--accent); border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.3;transform:scale(.6)} }
+
+  .btn-logout {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); font-family: 'Space Mono', monospace;
+    font-size: 9px; letter-spacing: 1px; padding: 4px 8px;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
+
+  .art-container {
+    position: relative; width: 100%; aspect-ratio: 1;
+    overflow: hidden; background: #0d0d0d;
+  }
+  #artImg {
+    width:100%; height:100%; object-fit:cover;
+    display:none; position:absolute; inset:0;
+  }
+  .art-placeholder {
+    width:100%; height:100%; display:flex;
+    align-items:center; justify-content:center;
+  }
+  .art-placeholder svg { width:64px; height:64px; opacity:.1; }
+  .art-overlay {
+    position:absolute; inset:0;
+    background:linear-gradient(to bottom,transparent 50%,var(--surface) 100%);
+    pointer-events:none;
+  }
+
+  .track-info {
+    padding: 0 20px 20px;
+    margin-top: -40px;
+    position: relative; z-index: 1;
+  }
+  .track-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 36px; letter-spacing: 2px; line-height: 1.05;
+    margin-bottom: 4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .track-artist {
+    font-size: 11px; color: var(--accent); letter-spacing: 1px; margin-bottom: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .track-album {
+    font-size: 10px; color: var(--muted); letter-spacing: 1px; font-style: italic;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .progress-section { padding: 14px 20px; border-top: 1px solid var(--border); }
+  .progress-bar-bg { height: 2px; background: var(--border); margin-bottom: 6px; }
+  .progress-bar-fill {
+    height: 100%; background: var(--accent);
+    transition: width 1s linear; position: relative;
+  }
+  .progress-bar-fill::after {
+    content:''; position:absolute; right:-4px; top:-3px;
+    width:8px; height:8px; background:var(--accent); border-radius:50%;
+  }
+  .time-row {
+    display:flex; justify-content:space-between;
+    font-size:9px; color:var(--muted); letter-spacing:1px;
+  }
+
+  .controls {
+    display:flex; align-items:center; justify-content:center;
+    gap:28px; padding:14px 20px 20px;
+    border-top: 1px solid var(--border);
+  }
+  .ctrl-btn {
+    background:none; border:none; color:var(--muted); cursor:pointer;
+    transition:color .15s,transform .1s; padding:6px; display:flex; align-items:center;
+  }
+  .ctrl-btn:hover { color:var(--text); }
+  .ctrl-btn:active { transform:scale(.9); }
+  .ctrl-btn.play { color:var(--accent); }
+  .ctrl-btn.play:hover { color:#23e865; }
+
+  .idle-msg {
+    padding:40px 24px; text-align:center;
+    flex-direction:column; align-items:center; gap:12px; display:none;
+  }
+  .idle-msg svg { opacity:.1; }
+  .idle-msg p { font-size:11px; color:var(--muted); letter-spacing:1px; line-height:1.8; }
+
+  .loading {
+    padding:40px 24px; text-align:center;
+    flex-direction:column; align-items:center; gap:12px;
+  }
+  .spinner {
+    width:24px; height:24px; border:2px solid var(--border);
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .loading p { font-size:10px; color:var(--muted); letter-spacing:2px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- CONNECT -->
+  <div id="connectScreen">
+    <div class="logo-wrap">
+      <div class="sp-icon">
+        <svg viewBox="0 0 24 24" fill="#000"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      </div>
+      <div class="connect-title">NOW<br><span>PLAYING</span></div>
+    </div>
+    <p class="connect-desc">Conecta tu cuenta de Spotify para ver<br>lo que estás escuchando en tiempo real.</p>
+    <div id="errorMsg" class="error-msg"></div>
+    <button class="btn-connect" onclick="startAuth()">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+      CONECTAR CON SPOTIFY
+    </button>
+  </div>
+
+  <!-- PLAYER -->
+  <div id="player">
+    <div class="player-header">
+      <div class="player-label"><div class="live-dot"></div>NOW PLAYING</div>
+      <button class="btn-logout" onclick="logout()">SALIR</button>
+    </div>
+
+    <div id="loadingState" class="loading" style="display:flex;">
+      <div class="spinner"></div>
+      <p>CARGANDO...</p>
+    </div>
+
+    <div id="idleState" class="idle-msg">
+      <svg width="52" height="52" viewBox="0 0 24 24" fill="#fff"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      <p>NADA REPRODUCIÉNDOSE<br>Abre Spotify y dale play.</p>
+    </div>
+
+    <div id="nowPlayingState" style="display:none;">
+      <div class="art-container">
+        <div class="art-placeholder" id="artPlaceholder">
+          <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+        </div>
+        <img id="artImg" src="" alt="Album art">
+        <div class="art-overlay"></div>
+      </div>
+
+      <div class="track-info">
+        <div class="track-name" id="trackName">—</div>
+        <div class="track-artist" id="trackArtist">—</div>
+        <div class="track-album" id="trackAlbum">—</div>
+      </div>
+
+      <div class="progress-section">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+        </div>
+        <div class="time-row">
+          <span id="timeElapsed">0:00</span>
+          <span id="timeDuration">0:00</span>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="ctrl-btn" onclick="skipPrev()">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button class="ctrl-btn play" onclick="togglePlay()">
+          <svg id="playIcon" width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="pauseIcon" width="34" height="34" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button class="ctrl-btn" onclick="skipNext()">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6h2v12h-2z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script>
+const CLIENT_ID = '64dac14fe18f4aa99b5dca678e7a6558';
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+const SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
+
+function randStr(n) {
+  const c = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const a = new Uint8Array(n); crypto.getRandomValues(a);
+  return Array.from(a, b => c[b % c.length]).join('');
+}
+async function pkce(v) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  return btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+let token = null, poll = null, prog = null, progress = 0, duration = 1, playing = false;
+
+window.addEventListener('load', async () => {
+  const p = new URLSearchParams(window.location.search);
+  if (p.get('error')) { showErr('Acceso denegado. Intenta de nuevo.'); return; }
+  if (p.get('code')) {
+    history.replaceState({}, '', location.pathname);
+    await exchange(p.get('code')); return;
+  }
+  const t = localStorage.getItem('sp_t'), e = localStorage.getItem('sp_e');
+  if (t && e && Date.now() < +e) { token = t; showPlayer(); }
+});
+
+async function startAuth() {
+  const v = randStr(64), c = await pkce(v);
+  localStorage.setItem('sp_v', v);
+  const u = new URL('https://accounts.spotify.com/authorize');
+  u.searchParams.set('client_id', CLIENT_ID);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('redirect_uri', REDIRECT_URI);
+  u.searchParams.set('scope', SCOPES);
+  u.searchParams.set('code_challenge_method', 'S256');
+  u.searchParams.set('code_challenge', c);
+  location.href = u.toString();
+}
+
+async function exchange(code) {
+  const v = localStorage.getItem('sp_v');
+  if (!v) { showErr('Sesión expirada. Intenta de nuevo.'); return; }
+  const r = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: CLIENT_ID, grant_type: 'authorization_code', code, redirect_uri: REDIRECT_URI, code_verifier: v })
+  });
+  if (!r.ok) {
+    const e = await r.json().catch(()=>({}));
+    showErr(e.error_description || 'Error de autenticación. Verifica el Redirect URI en Spotify Dashboard:\n' + REDIRECT_URI);
+    return;
+  }
+  const d = await r.json();
+  token = d.access_token;
+  localStorage.setItem('sp_t', token);
+  localStorage.setItem('sp_e', Date.now() + d.expires_in * 1000);
+  localStorage.removeItem('sp_v');
+  showPlayer();
+}
+
+function logout() {
+  token = null;
+  localStorage.removeItem('sp_t'); localStorage.removeItem('sp_e');
+  clearInterval(poll); clearInterval(prog);
+  document.getElementById('player').style.display = 'none';
+  document.getElementById('connectScreen').style.display = 'flex';
+}
+
+function showPlayer() {
+  document.getElementById('connectScreen').style.display = 'none';
+  document.getElementById('player').style.display = 'flex';
+  document.getElementById('loadingState').style.display = 'flex';
+  fetchTrack();
+  poll = setInterval(fetchTrack, 5000);
+}
+
+async function fetchTrack() {
+  if (!token) return;
+  try {
+    const r = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (r.status === 401) { logout(); return; }
+    document.getElementById('loadingState').style.display = 'none';
+    if (r.status === 204 || !r.ok) { showIdle(); return; }
+    const d = await r.json();
+    if (!d?.item) { showIdle(); return; }
+    render(d);
+  } catch { document.getElementById('loadingState').style.display='none'; showIdle(); }
+}
+
+function showIdle() {
+  document.getElementById('idleState').style.display = 'flex';
+  document.getElementById('nowPlayingState').style.display = 'none';
+  clearInterval(prog);
+}
+
+function render(data) {
+  const t = data.item; playing = data.is_playing;
+  document.getElementById('idleState').style.display = 'none';
+  document.getElementById('nowPlayingState').style.display = 'block';
+
+  const img = document.getElementById('artImg'), ph = document.getElementById('artPlaceholder');
+  const art = t.album?.images?.[0]?.url;
+  if (art && img.src !== art) {
+    img.style.display = 'none'; ph.style.display = 'flex';
+    img.onload = () => { ph.style.display='none'; img.style.display='block'; };
+    img.src = art;
+  }
+
+  document.getElementById('trackName').textContent = t.name;
+  document.getElementById('trackArtist').textContent = t.artists?.map(a=>a.name).join(', ');
+  document.getElementById('trackAlbum').textContent = t.album?.name;
+  document.getElementById('playIcon').style.display = playing ? 'none' : 'block';
+  document.getElementById('pauseIcon').style.display = playing ? 'block' : 'none';
+
+  progress = data.progress_ms || 0; duration = t.duration_ms || 1;
+  tick(); clearInterval(prog);
+  if (playing) prog = setInterval(() => { progress = Math.min(progress+1000, duration); tick(); }, 1000);
+}
+
+function tick() {
+  document.getElementById('progressFill').style.width = Math.min(progress/duration*100,100)+'%';
+  document.getElementById('timeElapsed').textContent = fmt(progress);
+  document.getElementById('timeDuration').textContent = fmt(duration);
+}
+
+function fmt(v) { const s=Math.floor(v/1000); return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`; }
+
+async function togglePlay() {
+  await fetch(`https://api.spotify.com/v1/me/player/${playing?'pause':'play'}`, { method:'PUT', headers:{Authorization:`Bearer ${token}`} });
+  setTimeout(fetchTrack, 300);
+}
+async function skipNext() {
+  await fetch('https://api.spotify.com/v1/me/player/next', { method:'POST', headers:{Authorization:`Bearer ${token}`} });
+  setTimeout(fetchTrack, 600);
+}
+async function skipPrev() {
+  await fetch('https://api.spotify.com/v1/me/player/previous', { method:'POST', headers:{Authorization:`Bearer ${token}`} });
+  setTimeout(fetchTrack, 600);
+}
+
+function showErr(m) { const e=document.getElementById('errorMsg'); e.textContent=m; e.style.display='block'; }
+</script>
+</body>
+</html>
