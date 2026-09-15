@@ -54,15 +54,22 @@
     position: absolute;
     width: 65vmax; height: 65vmax;
     border-radius: 50%;
-    filter: blur(110px);
-    opacity: .32;
-    background: radial-gradient(circle, rgba(var(--accent-rgb),.95), transparent 70%);
+    filter: blur(95px);
+    opacity: .5;
+    background: radial-gradient(circle, rgba(var(--accent-rgb),1), transparent 68%);
+    transition: background .5s ease;
   }
   .blob-a { top: -28vmax; left: -20vmax; }
   .blob-b {
     bottom: -30vmax; right: -18vmax;
-    opacity: .22;
-    background: radial-gradient(circle, rgba(var(--accent-rgb),.7), transparent 70%);
+    opacity: .38;
+    background: radial-gradient(circle, rgba(var(--accent-rgb),.85), transparent 68%);
+  }
+  .blob-c {
+    width: 45vmax; height: 45vmax;
+    top: 30%; left: 50%; transform: translate(-50%, -50%);
+    opacity: .16; filter: blur(130px);
+    background: radial-gradient(circle, rgba(var(--accent-rgb),.9), transparent 70%);
   }
 
   .app { width: 100%; max-width: 460px; position: relative; z-index: 1; }
@@ -82,19 +89,25 @@
     .layout .app { max-width: 620px; }
   }
 
-  /* ── GLASSMORPHISM base para todas las tarjetas ── */
+  /* ── GLASSMORPHISM base para todas las tarjetas ──
+     El cristal lleva un tinte del color ambiente (--accent-rgb) mezclado con
+     blanco, para que la propia tarjeta se "pigmente" según la portada, no
+     solo el glow de fondo. */
   #connectScreen, #player, #lyricsPanel {
-    background: linear-gradient(160deg, rgba(255,255,255,.09), rgba(255,255,255,.02));
-    backdrop-filter: blur(26px) saturate(160%);
-    -webkit-backdrop-filter: blur(26px) saturate(160%);
-    border: 1px solid var(--border);
+    background:
+      linear-gradient(160deg, rgba(255,255,255,.12), rgba(255,255,255,.015)),
+      radial-gradient(140% 100% at 0% 0%, rgba(var(--accent-rgb),.16), transparent 60%);
+    backdrop-filter: blur(30px) saturate(200%);
+    -webkit-backdrop-filter: blur(30px) saturate(200%);
+    border: 1px solid rgba(var(--accent-rgb),.18);
     border-radius: 32px;
     box-shadow:
-      0 30px 60px -20px rgba(0,0,0,.65),
-      0 8px 24px -12px rgba(var(--accent-rgb),.25),
-      inset 0 1px 0 rgba(255,255,255,.14);
+      0 30px 70px -20px rgba(0,0,0,.7),
+      0 10px 32px -10px rgba(var(--accent-rgb),.35),
+      inset 0 1px 0 rgba(255,255,255,.16),
+      inset 0 0 40px rgba(var(--accent-rgb),.06);
     overflow: hidden;
-    transition: box-shadow .6s ease;
+    transition: box-shadow .5s ease, border-color .5s ease, background .5s ease;
   }
 
   /* ── CONNECT SCREEN ── */
@@ -265,18 +278,18 @@
 
   .progress-section { padding: 18px 20px 6px; }
   .waveform {
-    display: flex; align-items: center; gap: 2px;
+    display: flex; align-items: center; gap: 1px;
     height: 30px; margin-bottom: 8px;
   }
   .wave-bar {
-    flex: 1; min-width: 1px;
-    background: rgba(255,255,255,.14);
-    border-radius: 2px;
+    flex: 1; min-width: .5px; max-width: 2.5px;
+    background: rgba(255,255,255,.16);
+    border-radius: 1px;
     transition: background .25s;
   }
   .wave-bar.played {
     background: var(--accent);
-    box-shadow: 0 0 5px rgba(var(--accent-rgb),.6);
+    box-shadow: 0 0 4px rgba(var(--accent-rgb),.7);
   }
   .time-row {
     display:flex; justify-content:space-between;
@@ -359,8 +372,8 @@
   .lyrics-scroll::-webkit-scrollbar-thumb { background: var(--border); }
 
   .lyric-line {
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: 19px;
+    line-height: 1.55;
     color: var(--muted);
     letter-spacing: .3px;
     transition: color .25s, transform .25s, opacity .25s;
@@ -370,9 +383,9 @@
     color: var(--accent);
     font-weight: 700;
     opacity: 1;
-    transform: scale(1.03);
+    transform: scale(1.04);
     transform-origin: left center;
-    text-shadow: 0 0 18px rgba(var(--accent-rgb),.35);
+    text-shadow: 0 0 22px rgba(var(--accent-rgb),.4);
   }
   .lyric-line.past { opacity: .3; }
 
@@ -395,7 +408,12 @@
     .player-details .track-info { padding-top: 0; }
     .player-details .controls { justify-content: flex-start; padding-bottom: 4px; padding-top: 10px; }
 
-    .lyrics-scroll, #lyricsPanel .lyrics-msg { height: auto; flex: 1; min-height: 0; }
+    /* La altura exacta la fija JS (syncLyricsPanelHeight), midiendo el alto real
+       del reproductor: flexbox no puede "igualar" dos hermanos cuando ninguno
+       tiene una altura definida y uno contiene una lista con scroll interno
+       (el navegador termina expandiéndolo a su contenido completo). */
+    #lyricsPanel:not(.is-floating) .lyrics-scroll,
+    #lyricsPanel:not(.is-floating) .lyrics-msg { height: auto; flex: 1; min-height: 0; }
   }
 </style>
 </head>
@@ -403,6 +421,7 @@
 <div class="ambient-glow" aria-hidden="true">
   <div class="glow-blob blob-a"></div>
   <div class="glow-blob blob-b"></div>
+  <div class="glow-blob blob-c"></div>
 </div>
 <div class="layout">
 <div class="app">
@@ -535,7 +554,7 @@ let currentTrackId = null, lyricsLines = [], lyricsFetchToken = 0, activeLyricId
 let lyricsDoc = document, floatWindow = null, floatAnchor = null;
 let shuffleOn = false, repeatMode = 'off', waveBars = [];
 let audioFeaturesUnavailable = false, metaFetchToken = 0;
-const WAVE_BAR_COUNT = 48;
+const WAVE_BAR_COUNT = 90;
 function L(id) { return lyricsDoc.getElementById(id); }
 
 window.addEventListener('load', async () => {
@@ -624,6 +643,32 @@ function showPlayer() {
   document.getElementById('loadingState').style.display = 'flex';
   fetchTrack();
   poll = setInterval(fetchTrack, 5000);
+  syncLyricsPanelHeight();
+}
+
+/* ── ALTURA DEL PANEL DE LETRA = ALTURA REAL DEL REPRODUCTOR (solo escritorio) ──
+   Flexbox no puede igualar dos tarjetas cuando ninguna tiene alto definido y
+   una contiene una lista con scroll: el navegador la expande a su contenido
+   completo. Por eso medimos el alto real de #player y se lo aplicamos a
+   #lyricsPanel con JS, en vez de depender de align-items:stretch. */
+function syncLyricsPanelHeight() {
+  const playerEl = document.getElementById('player');
+  const lyricsPanel = document.getElementById('lyricsPanel');
+  if (!playerEl || !lyricsPanel) return; // la letra está en la ventana flotante: no aplica
+  if (window.innerWidth < 860 || playerEl.style.display === 'none') {
+    lyricsPanel.style.height = '';
+    return;
+  }
+  const h = playerEl.getBoundingClientRect().height;
+  if (h > 0) lyricsPanel.style.height = h + 'px';
+}
+window.addEventListener('resize', syncLyricsPanelHeight);
+if ('ResizeObserver' in window) {
+  const playerResizeObserver = new ResizeObserver(() => syncLyricsPanelHeight());
+  window.addEventListener('load', () => {
+    const playerEl = document.getElementById('player');
+    if (playerEl) playerResizeObserver.observe(playerEl);
+  });
 }
 
 async function fetchTrack() {
@@ -1037,7 +1082,7 @@ function extractAmbientColor(imgEl) {
     r /= n; g /= n; b /= n;
     // Sube saturación/luminosidad para un glow más vivo, evitando colores apagados.
     const [h, , ] = rgbToHsl(r, g, b);
-    const [nr, ng, nb] = hslToRgb(h, 0.62, 0.5);
+    const [nr, ng, nb] = hslToRgb(h, 0.75, 0.54);
     document.documentElement.style.setProperty('--accent-rgb', `${nr},${ng},${nb}`);
   } catch (e) {
     // Canvas "contaminado" por CORS: nos quedamos con el color por defecto.
