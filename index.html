@@ -265,8 +265,6 @@
 
   .lyrics-scroll {
     height: 420px;
-    flex: 1;
-    min-height: 0;
     overflow-y: auto;
     padding: 24px 20px;
     display: flex;
@@ -274,6 +272,11 @@
     gap: 14px;
     scroll-behavior: smooth;
   }
+  /* En modo flotante, el panel ocupa toda la ventana y el scroll/mensaje
+     llenan el espacio disponible en vez de usar la altura fija de 420px. */
+  #lyricsPanel.is-floating { height: 100%; }
+  #lyricsPanel.is-floating .lyrics-scroll,
+  #lyricsPanel.is-floating .lyrics-msg { height: auto; flex: 1; min-height: 0; }
   .lyrics-scroll::-webkit-scrollbar { width: 4px; }
   .lyrics-scroll::-webkit-scrollbar-thumb { background: var(--border); }
 
@@ -298,7 +301,7 @@
     padding: 40px 24px; text-align: center;
     flex-direction: column; align-items: center; justify-content: center; gap: 12px;
     display: none; color: var(--muted); font-size: 11px;
-    letter-spacing: 1px; line-height: 1.8; flex: 1; min-height: 0;
+    letter-spacing: 1px; line-height: 1.8;
   }
 </style>
 </head>
@@ -701,7 +704,7 @@ async function toggleFloatingLyrics() {
       pip.document.body.style.margin = '0';
       pip.document.body.style.background = '#0a0a0a';
       pip.document.body.appendChild(panel);
-      panel.style.height = '100%';
+      panel.classList.add('is-floating');
       floatWindow = pip;
       lyricsDoc = pip.document;
       pip.addEventListener('pagehide', closeFloatingLyrics, { once: true });
@@ -726,7 +729,7 @@ async function toggleFloatingLyrics() {
   popup.document.body.style.margin = '0';
   popup.document.body.style.background = '#0a0a0a';
   popup.document.body.appendChild(panel);
-  panel.style.height = '100%';
+  panel.classList.add('is-floating');
   floatWindow = popup;
   lyricsDoc = popup.document;
   const closeCheck = setInterval(() => {
@@ -740,7 +743,7 @@ function closeFloatingLyrics() {
   if (lyricsDoc === document) return;
   const panel = lyricsDoc.getElementById('lyricsPanel');
   if (panel && floatAnchor && floatAnchor.parentNode) {
-    panel.style.height = '';
+    panel.classList.remove('is-floating');
     floatAnchor.parentNode.insertBefore(panel, floatAnchor);
   }
   if (floatAnchor) { floatAnchor.remove(); floatAnchor = null; }
