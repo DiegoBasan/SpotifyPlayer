@@ -40,6 +40,19 @@
 
   .app { width: 100%; max-width: 460px; }
 
+  .layout {
+    width: 100%;
+    max-width: 460px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 20px;
+  }
+  @media (min-width: 860px) {
+    .layout { max-width: 940px; flex-direction: row; align-items: flex-start; }
+    .layout .app { max-width: 460px; }
+  }
+
   /* ── CONNECT SCREEN ── */
   #connectScreen {
     border: 1px solid var(--border);
@@ -223,9 +236,58 @@
   }
   @keyframes spin { to { transform:rotate(360deg); } }
   .loading p { font-size:10px; color:var(--muted); letter-spacing:2px; }
+
+  /* ── LYRICS PANEL ── */
+  #lyricsPanel {
+    display: none;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+  }
+  #lyricsPanel .player-header { flex-shrink: 0; }
+
+  .lyrics-scroll {
+    height: 420px;
+    overflow-y: auto;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-behavior: smooth;
+  }
+  .lyrics-scroll::-webkit-scrollbar { width: 4px; }
+  .lyrics-scroll::-webkit-scrollbar-thumb { background: var(--border); }
+
+  .lyric-line {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--muted);
+    letter-spacing: .3px;
+    transition: color .25s, transform .25s, opacity .25s;
+    opacity: .5;
+  }
+  .lyric-line.active {
+    color: var(--text);
+    font-weight: 700;
+    opacity: 1;
+    transform: scale(1.03);
+    transform-origin: left center;
+  }
+  .lyric-line.past { opacity: .3; }
+
+  .lyrics-msg {
+    padding: 40px 24px; text-align: center;
+    flex-direction: column; align-items: center; gap: 12px;
+    display: none; color: var(--muted); font-size: 11px;
+    letter-spacing: 1px; line-height: 1.8;
+  }
 </style>
 </head>
 <body>
+<div class="layout">
 <div class="app">
 
   <!-- CONNECT -->
@@ -302,8 +364,29 @@
   </div>
 
 </div>
+
+<!-- LYRICS -->
+<div id="lyricsPanel">
+  <div class="player-header">
+    <div class="player-label"><div class="live-dot"></div>LETRA</div>
+  </div>
+  <div id="lyricsLoading" class="lyrics-msg" style="display:flex;">
+    <div class="spinner"></div>
+    <p>BUSCANDO LETRA...</p>
+  </div>
+  <div id="lyricsEmpty" class="lyrics-msg">
+    <p>LETRA NO DISPONIBLE<br>PARA ESTA CANCIÓN.</p>
+  </div>
+  <div id="lyricsScroll" class="lyrics-scroll" style="display:none;"></div>
+</div>
+
+</div>
 <script>
-const CLIENT_ID = '64dac14fe18f4aa99b5dca678e7a6558';
+const CLIENT_ID = '3886450dc10141e89083a2c0820ae1d7';
+// Si pones aquí un refresh token válido (obtenido una vez tras conectar tu cuenta),
+// la app inicia sesión sola al cargar y NUNCA muestra la pantalla de "Conectar".
+// Se puede obtener leyendo localStorage.sp_rt en el navegador después de conectar una vez.
+const REFRESH_TOKEN = '';
 const REDIRECT_URI = window.location.origin + window.location.pathname;
 const SCOPES = 'user-read-currently-playing user-read-playback-state user-modify-playback-state';
 
@@ -318,6 +401,7 @@ async function pkce(v) {
 }
 
 let token = null, poll = null, prog = null, progress = 0, duration = 1, playing = false;
+let currentTrackId = null, lyricsLines = [], lyricsFetchToken = 0, activeLyricIdx = -1;
 
 window.addEventListener('load', async () => {
   const p = new URLSearchParams(window.location.search);
@@ -327,8 +411,29 @@ window.addEventListener('load', async () => {
     await exchange(p.get('code')); return;
   }
   const t = localStorage.getItem('sp_t'), e = localStorage.getItem('sp_e');
-  if (t && e && Date.now() < +e) { token = t; showPlayer(); }
+  if (t && e && Date.now() < +e) { token = t; showPlayer(); return; }
+
+  // Login silencioso: usa el refresh token guardado en localStorage o el hardcodeado arriba.
+  const rt = localStorage.getItem('sp_rt') || REFRESH_TOKEN;
+  if (rt) { const ok = await refreshAccessToken(rt); if (ok) { showPlayer(); return; } }
 });
+
+async function refreshAccessToken(refreshToken) {
+  try {
+    const r = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: CLIENT_ID, grant_type: 'refresh_token', refresh_token: refreshToken })
+    });
+    if (!r.ok) return false;
+    const d = await r.json();
+    token = d.access_token;
+    localStorage.setItem('sp_t', token);
+    localStorage.setItem('sp_e', Date.now() + d.expires_in * 1000);
+    if (d.refresh_token) localStorage.setItem('sp_rt', d.refresh_token);
+    return true;
+  } catch { return false; }
+}
 
 async function startAuth() {
   const v = randStr(64), c = await pkce(v);
@@ -360,21 +465,24 @@ async function exchange(code) {
   token = d.access_token;
   localStorage.setItem('sp_t', token);
   localStorage.setItem('sp_e', Date.now() + d.expires_in * 1000);
+  if (d.refresh_token) localStorage.setItem('sp_rt', d.refresh_token);
   localStorage.removeItem('sp_v');
   showPlayer();
 }
 
 function logout() {
   token = null;
-  localStorage.removeItem('sp_t'); localStorage.removeItem('sp_e');
+  localStorage.removeItem('sp_t'); localStorage.removeItem('sp_e'); localStorage.removeItem('sp_rt');
   clearInterval(poll); clearInterval(prog);
   document.getElementById('player').style.display = 'none';
+  document.getElementById('lyricsPanel').style.display = 'none';
   document.getElementById('connectScreen').style.display = 'flex';
 }
 
 function showPlayer() {
   document.getElementById('connectScreen').style.display = 'none';
   document.getElementById('player').style.display = 'flex';
+  document.getElementById('lyricsPanel').style.display = 'flex';
   document.getElementById('loadingState').style.display = 'flex';
   fetchTrack();
   poll = setInterval(fetchTrack, 5000);
@@ -399,6 +507,9 @@ function showIdle() {
   document.getElementById('idleState').style.display = 'flex';
   document.getElementById('nowPlayingState').style.display = 'none';
   clearInterval(prog);
+  currentTrackId = null; lyricsLines = []; activeLyricIdx = -1;
+  lyricsFetchToken++;
+  showLyricsEmpty('NADA REPRODUCIÉNDOSE.');
 }
 
 function render(data) {
@@ -421,6 +532,10 @@ function render(data) {
   document.getElementById('pauseIcon').style.display = playing ? 'block' : 'none';
 
   progress = data.progress_ms || 0; duration = t.duration_ms || 1;
+  if (t.id !== currentTrackId) {
+    currentTrackId = t.id;
+    loadLyrics(t);
+  }
   tick(); clearInterval(prog);
   if (playing) prog = setInterval(() => { progress = Math.min(progress+1000, duration); tick(); }, 1000);
 }
@@ -429,6 +544,96 @@ function tick() {
   document.getElementById('progressFill').style.width = Math.min(progress/duration*100,100)+'%';
   document.getElementById('timeElapsed').textContent = fmt(progress);
   document.getElementById('timeDuration').textContent = fmt(duration);
+  updateActiveLyric();
+}
+
+/* ── LETRA EN TIEMPO REAL (lrclib.net) ── */
+async function loadLyrics(t) {
+  const myFetch = ++lyricsFetchToken;
+  lyricsLines = []; activeLyricIdx = -1;
+  const scrollEl = document.getElementById('lyricsScroll');
+  const emptyEl = document.getElementById('lyricsEmpty');
+  const loadingEl = document.getElementById('lyricsLoading');
+  scrollEl.style.display = 'none'; scrollEl.innerHTML = '';
+  emptyEl.style.display = 'none';
+  loadingEl.style.display = 'flex';
+
+  const artist = t.artists?.[0]?.name || '';
+  const title = t.name || '';
+  const album = t.album?.name || '';
+  const durationSec = Math.round((t.duration_ms || 0) / 1000);
+
+  try {
+    const u = new URL('https://lrclib.net/api/get');
+    u.searchParams.set('artist_name', artist);
+    u.searchParams.set('track_name', title);
+    if (album) u.searchParams.set('album_name', album);
+    if (durationSec) u.searchParams.set('duration', durationSec);
+    const r = await fetch(u.toString());
+    if (myFetch !== lyricsFetchToken) return; // el track cambió mientras esperábamos
+    if (!r.ok) { showLyricsEmpty(); return; }
+    const d = await r.json();
+    if (myFetch !== lyricsFetchToken) return;
+
+    if (d.syncedLyrics) {
+      lyricsLines = parseLRC(d.syncedLyrics);
+    } else if (d.plainLyrics) {
+      lyricsLines = d.plainLyrics.split('\n').filter(l => l.trim()).map(l => ({ time: null, text: l }));
+    }
+
+    if (!lyricsLines.length) { showLyricsEmpty(); return; }
+
+    loadingEl.style.display = 'none';
+    scrollEl.style.display = 'flex';
+    scrollEl.innerHTML = lyricsLines.map((l, i) =>
+      `<div class="lyric-line" id="lyricLine${i}">${escapeHtml(l.text)}</div>`
+    ).join('');
+    updateActiveLyric();
+  } catch {
+    if (myFetch === lyricsFetchToken) showLyricsEmpty();
+  }
+}
+
+function showLyricsEmpty(msg) {
+  document.getElementById('lyricsLoading').style.display = 'none';
+  document.getElementById('lyricsScroll').style.display = 'none';
+  const el = document.getElementById('lyricsEmpty');
+  el.querySelector('p').innerHTML = msg || 'LETRA NO DISPONIBLE<br>PARA ESTA CANCIÓN.';
+  el.style.display = 'flex';
+}
+
+function parseLRC(raw) {
+  const lines = [];
+  raw.split('\n').forEach(line => {
+    const m = line.match(/^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/);
+    if (!m) return;
+    const time = (parseInt(m[1], 10) * 60 + parseFloat(m[2])) * 1000;
+    const text = m[3].trim();
+    if (text) lines.push({ time, text });
+  });
+  return lines.sort((a, b) => a.time - b.time);
+}
+
+function updateActiveLyric() {
+  if (!lyricsLines.length || lyricsLines[0].time === null) return;
+  let idx = -1;
+  for (let i = 0; i < lyricsLines.length; i++) {
+    if (lyricsLines[i].time <= progress) idx = i; else break;
+  }
+  if (idx === activeLyricIdx) return;
+  activeLyricIdx = idx;
+  lyricsLines.forEach((_, i) => {
+    const el = document.getElementById('lyricLine' + i);
+    if (!el) return;
+    el.classList.toggle('active', i === idx);
+    el.classList.toggle('past', i < idx);
+  });
+  const activeEl = document.getElementById('lyricLine' + idx);
+  if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
 function fmt(v) { const s=Math.floor(v/1000); return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`; }
