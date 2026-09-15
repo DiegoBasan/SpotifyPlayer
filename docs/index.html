@@ -155,6 +155,15 @@
   }
   .btn-logout:hover { border-color: var(--danger); color: var(--danger); }
 
+  .btn-mini {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); font-family: 'Space Mono', monospace;
+    font-size: 9px; letter-spacing: 1px; padding: 4px 8px;
+    cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .btn-mini:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-mini.active { border-color: var(--accent); color: var(--accent); background: rgba(29,185,84,.1); }
+
   .art-container {
     position: relative; width: 100%; aspect-ratio: 1;
     overflow: hidden; background: #0d0d0d;
@@ -256,6 +265,8 @@
 
   .lyrics-scroll {
     height: 420px;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 24px 20px;
     display: flex;
@@ -285,9 +296,9 @@
 
   .lyrics-msg {
     padding: 40px 24px; text-align: center;
-    flex-direction: column; align-items: center; gap: 12px;
+    flex-direction: column; align-items: center; justify-content: center; gap: 12px;
     display: none; color: var(--muted); font-size: 11px;
-    letter-spacing: 1px; line-height: 1.8;
+    letter-spacing: 1px; line-height: 1.8; flex: 1; min-height: 0;
   }
 </style>
 </head>
@@ -375,6 +386,7 @@
 <div id="lyricsPanel">
   <div class="player-header">
     <div class="player-label"><div class="live-dot"></div>LETRA</div>
+    <button class="btn-mini" id="floatBtn">⧉ FLOTANTE</button>
   </div>
   <div id="lyricsLoading" class="lyrics-msg" style="display:flex;">
     <div class="spinner"></div>
@@ -408,6 +420,8 @@ async function pkce(v) {
 
 let token = null, poll = null, prog = null, progress = 0, duration = 1, playing = false;
 let currentTrackId = null, lyricsLines = [], lyricsFetchToken = 0, activeLyricIdx = -1;
+let lyricsDoc = document, floatWindow = null, floatAnchor = null;
+function L(id) { return lyricsDoc.getElementById(id); }
 
 window.addEventListener('load', async () => {
   const p = new URLSearchParams(window.location.search);
@@ -480,15 +494,18 @@ function logout() {
   token = null;
   localStorage.removeItem('sp_t'); localStorage.removeItem('sp_e'); localStorage.removeItem('sp_rt');
   clearInterval(poll); clearInterval(prog);
+  closeFloatingLyrics();
   document.getElementById('player').style.display = 'none';
-  document.getElementById('lyricsPanel').style.display = 'none';
+  const lp = document.getElementById('lyricsPanel');
+  if (lp) lp.style.display = 'none';
   document.getElementById('connectScreen').style.display = 'flex';
 }
 
 function showPlayer() {
   document.getElementById('connectScreen').style.display = 'none';
   document.getElementById('player').style.display = 'flex';
-  document.getElementById('lyricsPanel').style.display = 'flex';
+  const lp = document.getElementById('lyricsPanel');
+  if (lp) lp.style.display = 'flex';
   document.getElementById('loadingState').style.display = 'flex';
   fetchTrack();
   poll = setInterval(fetchTrack, 5000);
@@ -557,9 +574,9 @@ function tick() {
 async function loadLyrics(t) {
   const myFetch = ++lyricsFetchToken;
   lyricsLines = []; activeLyricIdx = -1;
-  const scrollEl = document.getElementById('lyricsScroll');
-  const emptyEl = document.getElementById('lyricsEmpty');
-  const loadingEl = document.getElementById('lyricsLoading');
+  const scrollEl = L('lyricsScroll');
+  const emptyEl = L('lyricsEmpty');
+  const loadingEl = L('lyricsLoading');
   scrollEl.style.display = 'none'; scrollEl.innerHTML = '';
   emptyEl.style.display = 'none';
   loadingEl.style.display = 'flex';
@@ -601,9 +618,9 @@ async function loadLyrics(t) {
 }
 
 function showLyricsEmpty(msg) {
-  document.getElementById('lyricsLoading').style.display = 'none';
-  document.getElementById('lyricsScroll').style.display = 'none';
-  const el = document.getElementById('lyricsEmpty');
+  L('lyricsLoading').style.display = 'none';
+  L('lyricsScroll').style.display = 'none';
+  const el = L('lyricsEmpty');
   el.querySelector('p').innerHTML = msg || 'LETRA NO DISPONIBLE<br>PARA ESTA CANCIÓN.';
   el.style.display = 'flex';
 }
@@ -629,18 +646,112 @@ function updateActiveLyric() {
   if (idx === activeLyricIdx) return;
   activeLyricIdx = idx;
   lyricsLines.forEach((_, i) => {
-    const el = document.getElementById('lyricLine' + i);
+    const el = L('lyricLine' + i);
     if (!el) return;
     el.classList.toggle('active', i === idx);
     el.classList.toggle('past', i < idx);
   });
-  const activeEl = document.getElementById('lyricLine' + idx);
+  const activeEl = L('lyricLine' + idx);
   if (activeEl) activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
 }
 
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
+
+/* ── VENTANA FLOTANTE DE LETRA ── */
+function copyStylesInto(targetDoc) {
+  [...document.styleSheets].forEach(sheet => {
+    try {
+      const rules = [...sheet.cssRules].map(r => r.cssText).join('\n');
+      const style = targetDoc.createElement('style');
+      style.textContent = rules;
+      targetDoc.head.appendChild(style);
+    } catch (e) {
+      if (sheet.href) {
+        const link = targetDoc.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = sheet.href;
+        targetDoc.head.appendChild(link);
+      }
+    }
+  });
+}
+
+function updateFloatBtn(isFloating) {
+  const btn = L('floatBtn');
+  if (!btn) return;
+  btn.textContent = isFloating ? '◱ CERRAR FLOTANTE' : '⧉ FLOTANTE';
+  btn.classList.toggle('active', isFloating);
+}
+
+async function toggleFloatingLyrics() {
+  if (lyricsDoc !== document) { closeFloatingLyrics(); return; }
+
+  const panel = document.getElementById('lyricsPanel');
+  if (!panel) return;
+  floatAnchor = document.createComment('lyrics-anchor');
+  panel.parentNode.insertBefore(floatAnchor, panel);
+
+  if ('documentPictureInPicture' in window) {
+    try {
+      const pip = await documentPictureInPicture.requestWindow({ width: 360, height: 520 });
+      copyStylesInto(pip.document);
+      pip.document.title = 'Letra — NOW PLAYING';
+      pip.document.body.style.margin = '0';
+      pip.document.body.style.background = '#0a0a0a';
+      pip.document.body.appendChild(panel);
+      panel.style.height = '100%';
+      floatWindow = pip;
+      lyricsDoc = pip.document;
+      pip.addEventListener('pagehide', closeFloatingLyrics, { once: true });
+      updateFloatBtn(true);
+      updateActiveLyric();
+      return;
+    } catch (e) {
+      floatAnchor.remove(); floatAnchor = null;
+      // continúa al respaldo de ventana emergente abajo
+    }
+  }
+
+  const popup = window.open('', 'lyricsPopup', 'width=360,height=520,resizable=yes');
+  if (!popup) {
+    if (floatAnchor) { floatAnchor.remove(); floatAnchor = null; }
+    alert('Tu navegador bloqueó la ventana emergente. Permítela para usar la letra flotante.');
+    return;
+  }
+  popup.document.write('<!DOCTYPE html><html><head><title>Letra — NOW PLAYING</title></head><body></body></html>');
+  popup.document.close();
+  copyStylesInto(popup.document);
+  popup.document.body.style.margin = '0';
+  popup.document.body.style.background = '#0a0a0a';
+  popup.document.body.appendChild(panel);
+  panel.style.height = '100%';
+  floatWindow = popup;
+  lyricsDoc = popup.document;
+  const closeCheck = setInterval(() => {
+    if (popup.closed) { clearInterval(closeCheck); closeFloatingLyrics(); }
+  }, 500);
+  updateFloatBtn(true);
+  updateActiveLyric();
+}
+
+function closeFloatingLyrics() {
+  if (lyricsDoc === document) return;
+  const panel = lyricsDoc.getElementById('lyricsPanel');
+  if (panel && floatAnchor && floatAnchor.parentNode) {
+    panel.style.height = '';
+    floatAnchor.parentNode.insertBefore(panel, floatAnchor);
+  }
+  if (floatAnchor) { floatAnchor.remove(); floatAnchor = null; }
+  if (floatWindow && !floatWindow.closed) { try { floatWindow.close(); } catch (e) {} }
+  floatWindow = null;
+  lyricsDoc = document;
+  updateFloatBtn(false);
+  updateActiveLyric();
+}
+
+document.getElementById('floatBtn')?.addEventListener('click', toggleFloatingLyrics);
 
 function fmt(v) { const s=Math.floor(v/1000); return `${Math.floor(s/60)}:${(s%60).toString().padStart(2,'0')}`; }
 
