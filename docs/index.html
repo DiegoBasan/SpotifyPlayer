@@ -513,7 +513,7 @@
           <div class="art-placeholder" id="artPlaceholder">
             <svg viewBox="0 0 24 24" fill="#fff"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
           </div>
-          <img id="artImg" src="" alt="Album art" crossorigin="anonymous">
+          <img id="artImg" src="" alt="Album art">
         </div>
 
         <div class="player-details">
@@ -825,8 +825,13 @@ function render(data) {
   const art = t.album?.images?.[0]?.url;
   if (art && img.src !== art) {
     img.style.display = 'none'; ph.style.display = 'flex';
-    img.onload = () => { ph.style.display='none'; img.style.display='block'; extractAmbientColor(img); };
+    // La portada visible se carga SIN crossOrigin, para que siempre se vea
+    // aunque el CDN de Spotify no mande cabeceras CORS. El color ambiente se
+    // lee aparte, con una imagen invisible propia: si esa lectura falla
+    // (CORS, red, lo que sea) no afecta para nada a la portada real.
+    img.onload = () => { ph.style.display='none'; img.style.display='block'; };
     img.src = art;
+    extractAmbientColor(art);
   }
 
   document.getElementById('trackName').textContent = t.name;
@@ -1188,28 +1193,37 @@ function hslToRgb(h, s, l) {
   }
   return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
 }
-function extractAmbientColor(imgEl) {
-  try {
-    const size = 24;
-    const c = document.createElement('canvas');
-    c.width = size; c.height = size;
-    const ctx = c.getContext('2d');
-    ctx.drawImage(imgEl, 0, 0, size, size);
-    const data = ctx.getImageData(0, 0, size, size).data;
-    let r = 0, g = 0, b = 0, n = 0;
-    for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 100) continue; // ignora píxeles muy transparentes
-      r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+function extractAmbientColor(url) {
+  // Imagen aparte e invisible, solo para leer color por canvas. Si el CDN no
+  // manda cabeceras CORS esto simplemente falla en silencio (catch abajo):
+  // NUNCA toca la portada que sí se ve en pantalla.
+  const probe = new Image();
+  probe.crossOrigin = 'anonymous';
+  probe.onload = () => {
+    try {
+      const size = 24;
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(probe, 0, 0, size, size);
+      const data = ctx.getImageData(0, 0, size, size).data;
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 100) continue; // ignora píxeles muy transparentes
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      }
+      if (!n) return;
+      r /= n; g /= n; b /= n;
+      // Sube saturación/luminosidad para un glow más vivo, evitando colores apagados.
+      const [h, , ] = rgbToHsl(r, g, b);
+      const [nr, ng, nb] = hslToRgb(h, 0.75, 0.54);
+      document.documentElement.style.setProperty('--accent-rgb', `${nr},${ng},${nb}`);
+    } catch (e) {
+      // Canvas "contaminado" por CORS: nos quedamos con el color actual.
     }
-    if (!n) return;
-    r /= n; g /= n; b /= n;
-    // Sube saturación/luminosidad para un glow más vivo, evitando colores apagados.
-    const [h, , ] = rgbToHsl(r, g, b);
-    const [nr, ng, nb] = hslToRgb(h, 0.75, 0.54);
-    document.documentElement.style.setProperty('--accent-rgb', `${nr},${ng},${nb}`);
-  } catch (e) {
-    // Canvas "contaminado" por CORS: nos quedamos con el color por defecto.
-  }
+  };
+  probe.onerror = () => { /* la sonda falló; el color ambiente se queda como está */ };
+  probe.src = url;
 }
 
 function showErr(m) { const e=document.getElementById('errorMsg'); e.textContent=m; e.style.display='block'; }
